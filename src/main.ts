@@ -12,16 +12,36 @@ async function bootstrap(): Promise<void> {
 
   app.setGlobalPrefix('api');
 
+  // Browsers send an Origin with no path and no trailing slash
+  // ("https://app.example.com"), so normalise whatever is configured to that
+  // shape. A stray trailing slash in FRONTEND_URL used to silently block every
+  // cross-origin request.
+  const normaliseOrigin = (value: string): string => {
+    const trimmed = value.trim();
+    if (!trimmed) return '';
+    try {
+      return new URL(trimmed).origin;
+    } catch {
+      return trimmed.replace(/\/+$/, '');
+    }
+  };
+
   const frontendUrls = (process.env.FRONTEND_URL || 'http://localhost:3000')
     .split(',')
-    .map((u) => u.trim())
+    .map(normaliseOrigin)
     .filter(Boolean);
+
+  logger.log(`CORS allow-list: ${frontendUrls.join(', ') || '(none)'} + any localhost`);
+
   app.enableCors({
     // Allow the configured frontend(s); also reflect any localhost origin for local dev.
     origin: (origin, cb) => {
-      if (!origin || frontendUrls.includes(origin) || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+      if (!origin) return cb(null, true);
+      const candidate = normaliseOrigin(origin);
+      if (frontendUrls.includes(candidate) || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(candidate)) {
         return cb(null, true);
       }
+      logger.warn(`Blocked CORS request from origin: ${origin}`);
       return cb(null, false);
     },
     credentials: true,
