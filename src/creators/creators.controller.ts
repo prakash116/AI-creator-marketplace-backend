@@ -42,6 +42,13 @@ export class CreatorsController {
     return this.creators.list(query);
   }
 
+  /** Must be declared before :id so "me" isn't treated as a creator id. */
+  @Get('me')
+  @UseGuards(JwtAuthGuard)
+  findMine(@CurrentUser() user: JwtPayload): Promise<Creator | null> {
+    return this.creators.findMine(user);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string): Promise<Creator> {
     return this.creators.findOne(id);

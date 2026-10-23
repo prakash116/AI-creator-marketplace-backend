@@ -62,17 +62,29 @@ export class SeedService implements OnModuleInit {
     if (reset) await Promise.all(repos.map((r) => r.deleteAll()));
 
     const now = new Date().toISOString();
-    const users: UserEntity[] = await Promise.all(
-      DEMO_USERS.map(async (u) => ({
-        id: newId(),
-        name: u.name,
-        email: u.email.toLowerCase(),
-        passwordHash: await bcrypt.hash(u.password, 10),
-        role: u.role,
-        creatorId: 'creatorId' in u ? u.creatorId : undefined,
-        createdAt: now,
-      })),
-    );
+
+    // The demo accounts have a published password, so they are only created
+    // when explicitly asked for. In-memory storage is throwaway, so they are
+    // on by default there; against a real database they must be opted into
+    // with SEED_DEMO_USERS=1.
+    const seedDemoUsers = (process.env.SEED_DEMO_USERS ?? (this.db.isMongo ? '0' : '1')) === '1';
+    if (!seedDemoUsers) {
+      this.logger.warn('SEED_DEMO_USERS is off — skipping demo accounts (content is still seeded)');
+    }
+
+    const users: UserEntity[] = !seedDemoUsers
+      ? []
+      : await Promise.all(
+          DEMO_USERS.map(async (u) => ({
+            id: newId(),
+            name: u.name,
+            email: u.email.toLowerCase(),
+            passwordHash: await bcrypt.hash(u.password, 10),
+            role: u.role,
+            creatorId: 'creatorId' in u ? u.creatorId : undefined,
+            createdAt: now,
+          })),
+        );
     const ownerByCreator = new Map(users.filter((u) => u.creatorId).map((u) => [u.creatorId, u.id]));
 
     const creators: CreatorEntity[] = CREATORS.map(({ portfolio: _p, ...c }) => ({

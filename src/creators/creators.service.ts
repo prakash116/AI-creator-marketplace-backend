@@ -126,16 +126,34 @@ export class CreatorsService {
   async update(user: JwtPayload, idOrUsername: string, dto: UpdateCreatorDto): Promise<CreatorEntity> {
     const creator = await this.resolve(idOrUsername);
     if (!creator) throw new NotFoundException('Creator not found');
-    if (creator.userId && creator.userId !== user.sub) {
+    // Deny when the profile has no owner too: seeded/demo profiles belong to
+    // nobody, and treating "unowned" as "editable by anyone" let any signed-in
+    // user rewrite them.
+    if (creator.userId !== user.sub) {
       throw new ForbiddenException('You can only edit your own creator profile');
     }
 
     const patch: Partial<CreatorEntity> = { ...dto };
-    if (dto.username && dto.username.toLowerCase() !== creator.username) {
+    // Always store usernames lower-cased, even when the submitted value only
+    // differs in case — lookups match on the lower-cased form.
+    if (dto.username) {
       const username = dto.username.toLowerCase();
-      if (await this.resolve(username)) throw new ConflictException('Username is already taken');
+      if (username !== creator.username) {
+        if (await this.resolve(username)) throw new ConflictException('Username is already taken');
+      }
       patch.username = username;
     }
-    return this.creators.update(creator.id, patch);
+
+    const updated = await this.creators.update(creator.id, patch);
+    if (!updated) throw new NotFoundException('Creator not found');
+    return updated;
+  }
+
+  /** The signed-in user's own creator profile, or null if they have none. */
+  async findMine(user: JwtPayload): Promise<Creator | null> {
+    const creator = await this.creators.findOne({ userId: user.sub });
+    if (!creator) return null;
+    const portfolio = (await this.portfolio.findAll({ creatorId: creator.id })).sort(byNewest);
+    return { ...creator, portfolio };
   }
 }
